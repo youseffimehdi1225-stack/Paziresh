@@ -89,6 +89,53 @@ app.get('/api/admin/audit-logs', requireAuth, requireRole('admin'), async (_req,
   res.json({ logs: rows });
 });
 
+app.get('/api/specialists', requireAuth, async (_req, res) => {
+  const [rows] = await pool.query('SELECT id, user_id AS userId, title, category, specialty, room_number AS roomNumber, building, bio, is_available AS isAvailable, schedule_json AS schedule FROM specialists WHERE is_available = TRUE ORDER BY title');
+  res.json({ specialists: rows });
+});
+
+app.get('/api/appointments', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  const query = user.role === 'admin'
+    ? ['SELECT * FROM appointments ORDER BY date_iso DESC, time_slot DESC']
+    : ['SELECT a.* FROM appointments a LEFT JOIN specialists s ON s.id = a.specialist_id WHERE a.user_id = ? OR s.user_id = ? ORDER BY a.date_iso DESC, a.time_slot DESC', [user.id, user.id]];
+  const [rows] = await pool.execute(query[0], query[1]);
+  res.json({ appointments: rows });
+});
+
+app.post('/api/appointments', requireAuth, async (req, res) => {
+  if (req.session.user.role !== 'employee') return res.status(403).json({ error: 'ONLY_EMPLOYEES_CAN_BOOK' });
+  const { specialistId, dateISO, timeSlot, userReason } = req.body || {};
+  if (!specialistId || !/^\d{4}-\d{2}-\d{2}$/.test(dateISO) || !timeSlot || typeof userReason !== 'string' || userReason.length > 1000) return res.status(400).json({ error: 'INVALID_APPOINTMENT' });
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [specialists] = await connection.execute('SELECT id FROM specialists WHERE id = ? AND is_available = TRUE FOR SHARE', [specialistId]);
+    if (!specialists.length) return res.status(404).json({ error: 'SPECIALIST_NOT_FOUND' });
+    const [conflicts] = await connection.execute("SELECT id FROM appointments WHERE specialist_id = ? AND date_iso = ? AND time_slot = ? AND status NOT IN ('cancelled','no_show') FOR UPDATE", [specialistId, dateISO, timeSlot]);
+    if (conflicts.length) return res.status(409).json({ error: 'SLOT_UNAVAILABLE' });
+    const id = `apt-${crypto.randomUUID()}`;
+    const trackingCode = `MP-${crypto.randomInt(1000, 10000)}`;
+    await connection.execute('INSERT INTO appointments (id, tracking_code, user_id, specialist_id, date_iso, time_slot, user_reason) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, trackingCode, req.session.user.id, specialistId, dateISO, timeSlot, userReason]);
+    await connection.commit();
+    await audit(req, 'appointment.create', id, { specialistId, dateISO, timeSlot });
+    return res.status(201).json({ id, trackingCode });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Appointment create error', error);
+    return res.status(500).json({ error: 'APPOINTMENT_CREATE_FAILED' });
+  } finally { connection.release(); }
+});
+
+app.patch('/api/appointments/:id/status', requireAuth, requireRole('admin', 'doctor', 'counselor', 'lawyer', 'barber', 'nutritionist'), async (req, res) => {
+  const allowed = ['in_progress', 'completed', 'no_show', 'cancelled'];
+  if (!allowed.includes(req.body?.status)) return res.status(400).json({ error: 'INVALID_STATUS' });
+  const [result] = await pool.execute('UPDATE appointments a JOIN specialists s ON s.id = a.specialist_id SET a.status = ?, a.session_result = ? WHERE a.id = ? AND (s.user_id = ? OR ? = \'admin\')', [req.body.status, req.body.sessionResult ? JSON.stringify(req.body.sessionResult) : null, req.params.id, req.session.user.id, req.session.user.role]);
+  if (!result.affectedRows) return res.status(404).json({ error: 'APPOINTMENT_NOT_FOUND' });
+  await audit(req, 'appointment.status.update', req.params.id, { status: req.body.status });
+  res.json({ ok: true });
+});
+
 app.use(express.static(distPath));
 
 // SPA fallback: any unmatched route serves index.html

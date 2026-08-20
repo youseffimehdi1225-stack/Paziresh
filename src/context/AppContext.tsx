@@ -20,7 +20,7 @@ interface AppContextType {
   setActiveView: (view: 'employee' | 'specialist' | 'admin') => void;
   
   // Appointment Actions
-  bookAppointment: (input: BookAppointmentInput) => { success: boolean; message: string; appointment?: Appointment };
+  bookAppointment: (input: BookAppointmentInput) => Promise<{ success: boolean; message: string; appointment?: Appointment }>;
   cancelAppointment: (appointmentId: string, reason: string) => { success: boolean; message: string };
   recordSessionResult: (appointmentId: string, result: SessionResult, isNoShow: boolean) => { success: boolean; message: string };
   updateAppointmentStatus: (appointmentId: string, status: AppointmentStatus) => void;
@@ -218,7 +218,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => { cancelled = true; };
   }, [isProduction]);
 
-  const bookAppointment = (input: BookAppointmentInput) => {
+  const bookAppointment = async (input: BookAppointmentInput) => {
+    if (isProduction) {
+      try {
+        const response = await fetch('/api/appointments', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+        if (!response.ok) return { success: false, message: payload.error || 'ثبت نوبت انجام نشد' };
+        const specialist = specialists.find((candidate) => candidate.id === input.specialistId);
+        const appointment: Appointment = {
+          id: payload.id,
+          trackingCode: payload.trackingCode,
+          userId: currentUser.id,
+          userName: currentUser.fullName,
+          userPersonnelCode: currentUser.personnelCode,
+          userDepartment: currentUser.department,
+          userPhone: currentUser.phone,
+          specialistId: input.specialistId,
+          specialistName: specialist?.fullName || '',
+          specialistCategory: specialist?.category || 'medical',
+          specialistRoom: specialist?.roomNumber || '',
+          dateShamsi: input.dateShamsi,
+          dateISO: input.dateISO,
+          timeSlot: input.timeSlot,
+          status: 'confirmed',
+          userReason: input.userReason,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        showToast(`نوبت شما با کد پیگیری ${appointment.trackingCode} با موفقیت ثبت شد.`, 'success');
+        return { success: true, message: 'رزرو با موفقیت انجام شد', appointment };
+      } catch {
+        return { success: false, message: 'ارتباط با سرور برقرار نشد' };
+      }
+    }
     // Check if user is blocked due to excessive no-shows
     if (currentUser.isBlockedForNoShow) {
       showToast('حساب شما به دلیل ۳ غیبت بدون اطلاع در نوبت‌های قبلی، موقتاً مسدود شده است. لطفاً به مدیریت رفاهیات مراجعه فرمایید.', 'error');

@@ -60,7 +60,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ specialist, onClose 
     (slot) => !bookedSlotsOnDate.includes(slot) && !isTimeSlotPast(slot, Boolean(selectedDay?.isToday))
   ).length;
 
-  const handleConfirm = (e: React.FormEvent) => {
+  const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSlot) {
       alert('لطفاً یک بازه زمانی انتخاب نمایید.');
@@ -76,7 +76,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ specialist, onClose 
     }
 
     setIsSubmitting(true);
-    const result = bookAppointment({
+    const result = await bookAppointment({
       specialistId: specialist.id,
       dateShamsi: selectedDay.dateShamsi,
       dateISO: selectedDay.dateISO,
