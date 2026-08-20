@@ -1,0 +1,8 @@
+{
+  "name": "سامانه رزرواسیون سازمانی مپنا (نوبت‌دهی خدمات رفاهی و سلامت)",
+  "description": "سامانه یکپارچه رزرو وقت پزشک، مشاور، وکیل و آرایشگر سازمانی با مدیریت حضور و غیاب، ثبت نتایج جلسات و پنل مدیریت نقش‌ها",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
