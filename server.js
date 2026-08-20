@@ -44,9 +44,16 @@ app.use(session({
 const ssoHeader = process.env.SSO_HEADER || 'LOGON_USER';
 const normaliseUsername = (value) => String(value || '').replace(/^.*[\\/]/, '').trim().toLowerCase();
 async function resolveSsoUser(req) {
-  const username = normaliseUsername(req.headers[ssoHeader.toLowerCase()] || req.headers['x-auth-user']);
+  const rawUsername = req.headers[ssoHeader.toLowerCase()]
+    || req.headers['x-auth-user']
+    || req.headers['x-iisnode-logon-user']
+    || req.headers['x-forwarded-user'];
+  const username = normaliseUsername(rawUsername);
   if (!username) return null;
-  const [rows] = await pool.execute('SELECT id, username, full_name AS fullName, email, personnel_code AS personnelCode, department, role, is_active AS isActive FROM users WHERE username = ? LIMIT 1', [username]);
+  const [rows] = await pool.execute(
+    'SELECT id, username, full_name AS fullName, email, personnel_code AS personnelCode, department, role, is_active AS isActive FROM users WHERE LOWER(username) IN (?, ?) LIMIT 1',
+    [username, String(rawUsername).trim().toLowerCase()],
+  );
   return rows[0] || null;
 }
 async function requireAuth(req, res, next) {
