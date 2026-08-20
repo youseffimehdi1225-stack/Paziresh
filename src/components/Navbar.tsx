@@ -183,7 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenPolicy }) => {
               </button>
 
               {/* User Switcher Dropdown Modal */}
-              {showUserMenu && (
+              {showUserMenu && !import.meta.env.PROD && (
                 <>
                   <div 
                     className="fixed inset-0 z-40" 

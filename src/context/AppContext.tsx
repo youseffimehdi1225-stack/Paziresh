@@ -57,6 +57,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const LOCAL_STORAGE_PREFIX = 'mapna_res_v1_';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isProduction = import.meta.env.PROD;
   // Global Theme state (persisted across reloads for all views)
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}theme`) || localStorage.getItem(`${LOCAL_STORAGE_PREFIX}admin_theme`);
@@ -145,6 +146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [activeView, setActiveView] = useState<'employee' | 'specialist' | 'admin'>('employee');
+  const [authReady, setAuthReady] = useState(!isProduction);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [selectedSpecialistForBooking, setSelectedSpecialistForBooking] = useState<Specialist | null>(null);
 
@@ -177,6 +179,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const setCurrentUser = (user: User) => {
+    if (isProduction && user.id !== currentUser.id) {
+      showToast('تغییر حساب کاربری از داخل سامانه مجاز نیست. لطفاً از SSO سازمانی خارج و دوباره وارد شوید.', 'error');
+      return;
+    }
     setCurrentUserState(user);
     // Auto sync view based on role
     if (user.role === 'admin') {
@@ -188,6 +194,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     showToast(`ورود با حساب کاربری: ${user.fullName} (${getRoleLabel(user.role)})`, 'info');
   };
+
+  useEffect(() => {
+    if (!isProduction) return;
+    let cancelled = false;
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('AUTH_REQUIRED');
+        return response.json();
+      })
+      .then(({ user }) => {
+        if (cancelled || !user) return;
+        const localUser = users.find((candidate) => candidate.id === user.id) || currentUser;
+        setCurrentUserState({ ...localUser, ...user });
+        setActiveView(user.role === 'admin' ? 'admin' : ['doctor', 'counselor', 'lawyer', 'barber', 'nutritionist'].includes(user.role) ? 'specialist' : 'employee');
+      })
+      .catch(() => {
+        if (!cancelled) showToast('احراز هویت سازمانی انجام نشد. دسترسی به سامانه امکان‌پذیر نیست.', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [isProduction]);
 
   const bookAppointment = (input: BookAppointmentInput) => {
     // Check if user is blocked due to excessive no-shows
@@ -480,7 +509,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleAdminTheme,
       }}
     >
-      {children}
+      {isProduction && !authReady ? null : children}
     </AppContext.Provider>
   );
 };
