@@ -14,7 +14,21 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_users_username (username)
 );
 
-ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NULL;
+SET @password_hash_column_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'users'
+    AND column_name = 'password_hash'
+);
+SET @add_password_hash_sql = IF(
+  @password_hash_column_exists = 0,
+  'ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL',
+  'SELECT 1'
+);
+PREPARE add_password_hash_statement FROM @add_password_hash_sql;
+EXECUTE add_password_hash_statement;
+DEALLOCATE PREPARE add_password_hash_statement;
 
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key VARCHAR(128) PRIMARY KEY,
