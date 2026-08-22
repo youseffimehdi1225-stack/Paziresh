@@ -44,10 +44,9 @@ app.use(session({
 const ssoHeader = process.env.SSO_HEADER || 'LOGON_USER';
 const normaliseUsername = (value) => String(value || '').replace(/^.*[\\/]/, '').trim().toLowerCase();
 async function resolveSsoUser(req) {
-  const rawUsername = req.headers[ssoHeader.toLowerCase()]
-    || req.headers['x-auth-user']
-    || req.headers['x-iisnode-logon-user']
-    || req.headers['x-forwarded-user'];
+  const rawUsername = process.env.NODE_ENV === 'production'
+    ? req.headers['x-iisnode-logon-user']
+    : req.headers[ssoHeader.toLowerCase()] || req.headers['x-auth-user'] || req.headers['x-iisnode-logon-user'];
   const username = normaliseUsername(rawUsername);
   if (!username) return null;
   const [rows] = await pool.execute(
