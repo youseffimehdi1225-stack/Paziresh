@@ -30,7 +30,8 @@ const sessionStore = new MySQLStore({}, pool);
 const sessionSecret = process.env.SESSION_SECRET;
 if (process.env.NODE_ENV === 'production' && (!sessionSecret || sessionSecret.length < 32)) throw new Error('SESSION_SECRET must be at least 32 characters in production');
 
-app.set('trust proxy', process.env.TRUST_PROXY === '1');
+const trustProxy = process.env.TRUST_PROXY === '1' ? 'loopback' : (process.env.TRUST_PROXY || false);
+app.set('trust proxy', trustProxy);
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '100kb' }));
