@@ -86,7 +86,11 @@ function requireRole(...roles) {
   return (req, res, next) => roles.includes(req.session.user?.role) ? next() : res.status(403).json({ error: 'FORBIDDEN' });
 }
 async function audit(req, action, resource, details = {}) {
-  await pool.execute('INSERT INTO audit_logs (user_id, action, resource, ip_address, details) VALUES (?, ?, ?, ?, ?)', [req.session.user?.id || null, action, resource, req.ip, JSON.stringify(details)]);
+  try {
+    await pool.execute('INSERT INTO audit_logs (user_id, action, resource, ip_address, details) VALUES (?, ?, ?, ?, ?)', [req.session.user?.id || null, action, resource, req.ip || null, JSON.stringify(details)]);
+  } catch (error) {
+    console.error('Audit log error', error);
+  }
 }
 
 app.get('/api/health', async (_req, res) => {
@@ -95,16 +99,21 @@ app.get('/api/health', async (_req, res) => {
 });
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: req.session.user }));
 app.post('/api/auth/local', async (req, res) => {
-  if (ssoEnabled) return res.status(403).json({ error: 'LOCAL_LOGIN_DISABLED' });
-  const username = normaliseUsername(req.body?.username);
-  const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (!username || password.length < 8) return res.status(400).json({ error: 'INVALID_CREDENTIALS' });
-  const [rows] = await pool.execute('SELECT id, username, full_name AS fullName, email, personnel_code AS personnelCode, department, role, is_active AS isActive, password_hash AS passwordHash FROM users WHERE LOWER(username) = ? LIMIT 1', [username]);
-  const row = rows[0];
-  if (!row || !row.isActive || !verifyPassword(password, row.passwordHash)) return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
-  req.session.user = safeUser(row);
-  await audit(req, 'auth.local.login', 'session');
-  res.json({ user: req.session.user });
+  try {
+    if (ssoEnabled) return res.status(403).json({ error: 'LOCAL_LOGIN_DISABLED' });
+    const username = normaliseUsername(req.body?.username);
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!username || password.length < 8) return res.status(400).json({ error: 'INVALID_CREDENTIALS' });
+    const [rows] = await pool.execute('SELECT id, username, full_name AS fullName, email, personnel_code AS personnelCode, department, role, is_active AS isActive, password_hash AS passwordHash FROM users WHERE LOWER(username) = ? LIMIT 1', [username]);
+    const row = rows[0];
+    if (!row || !row.isActive || !verifyPassword(password, row.passwordHash)) return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
+    req.session.user = safeUser(row);
+    await audit(req, 'auth.local.login', 'session');
+    return res.json({ user: req.session.user });
+  } catch (error) {
+    console.error('Local authentication error', error);
+    return res.status(503).json({ error: 'AUTH_SERVICE_UNAVAILABLE' });
+  }
 });
 app.post('/api/auth/logout', (req, res) => req.session.destroy(() => res.status(204).end()));
 app.get('/api/settings/ui', requireAuth, async (_req, res) => {
