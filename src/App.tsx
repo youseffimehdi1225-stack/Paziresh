@@ -20,10 +20,14 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { toPersianDigits } from './utils/dateUtils';
+import { AuthScreen } from './components/AuthScreen';
 
 const MainContent: React.FC = () => {
-  const { activeView, isDark } = useApp();
+  const { activeView, isDark, isAuthenticated, authLoading } = useApp();
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
+
+  if (authLoading) return <div className="min-h-screen bg-slate-100" />;
+  if (import.meta.env.PROD && !isAuthenticated) return <AuthScreen />;
 
   return (
     <div className={`min-h-screen flex flex-col font-['Vazirmatn',sans-serif] transition-colors duration-300 relative ${

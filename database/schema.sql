@@ -6,12 +6,15 @@ CREATE TABLE IF NOT EXISTS users (
   personnel_code VARCHAR(64) NULL UNIQUE,
   department VARCHAR(255) NULL,
   role ENUM('employee','doctor','counselor','lawyer','barber','nutritionist','admin') NOT NULL DEFAULT 'employee',
+  password_hash VARCHAR(255) NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_users_role (role),
   INDEX idx_users_username (username)
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NULL;
 
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key VARCHAR(128) PRIMARY KEY,

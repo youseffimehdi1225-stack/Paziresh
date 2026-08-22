@@ -12,6 +12,10 @@ interface BookAppointmentInput {
 
 interface AppContextType {
   currentUser: User;
+  isAuthenticated: boolean;
+  authLoading: boolean;
+  loginLocal: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
+  logout: () => Promise<void>;
   setCurrentUser: (user: User) => void;
   users: User[];
   specialists: Specialist[];
@@ -147,6 +151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [activeView, setActiveView] = useState<'employee' | 'specialist' | 'admin'>('employee');
   const [authReady, setAuthReady] = useState(!isProduction);
+  const [isAuthenticated, setIsAuthenticated] = useState(!isProduction);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [selectedSpecialistForBooking, setSelectedSpecialistForBooking] = useState<Specialist | null>(null);
 
@@ -178,6 +183,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setToastMessage(null);
   };
 
+  const loginLocal = async (username: string, password: string) => {
+    try {
+      const response = await fetch('/api/auth/local', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const payload = await response.json();
+      if (!response.ok) return { success: false, message: 'نام کاربری یا رمز عبور صحیح نیست' };
+      setCurrentUserState((previous) => ({ ...previous, ...payload.user }));
+      setIsAuthenticated(true);
+      const role = payload.user.role;
+      setActiveView(role === 'admin' ? 'admin' : ['doctor', 'counselor', 'lawyer', 'barber', 'nutritionist'].includes(role) ? 'specialist' : 'employee');
+      return { success: true, message: 'ورود موفق بود' };
+    } catch {
+      return { success: false, message: 'ارتباط با سرور برقرار نشد' };
+    }
+  };
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    setIsAuthenticated(false);
+  };
+
   const setCurrentUser = (user: User) => {
     if (isProduction && user.id !== currentUser.id) {
       showToast('تغییر حساب کاربری از داخل سامانه مجاز نیست. لطفاً از SSO سازمانی خارج و دوباره وارد شوید.', 'error');
@@ -207,9 +237,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (cancelled || !user) return;
         const localUser = users.find((candidate) => candidate.id === user.id) || currentUser;
         setCurrentUserState({ ...localUser, ...user });
+        setIsAuthenticated(true);
         setActiveView(user.role === 'admin' ? 'admin' : ['doctor', 'counselor', 'lawyer', 'barber', 'nutritionist'].includes(user.role) ? 'specialist' : 'employee');
       })
       .catch(() => {
+        setIsAuthenticated(false);
         if (!cancelled) showToast('احراز هویت سازمانی انجام نشد. دسترسی به سامانه امکان‌پذیر نیست.', 'error');
       })
       .finally(() => {
@@ -518,6 +550,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         currentUser,
+        isAuthenticated,
+        authLoading: !authReady,
+        loginLocal,
+        logout,
         setCurrentUser,
         users,
         specialists,

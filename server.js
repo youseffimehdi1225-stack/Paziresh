@@ -49,6 +49,7 @@ app.use(session({
 }));
 
 const ssoHeader = process.env.SSO_HEADER || 'LOGON_USER';
+const ssoEnabled = process.env.SSO_ENABLED === 'true';
 const normaliseUsername = (value) => String(value || '').replace(/^.*[\\/]/, '').trim().toLowerCase();
 async function resolveSsoUser(req) {
   const rawUsername = process.env.NODE_ENV === 'production'
@@ -72,6 +73,15 @@ async function requireAuth(req, res, next) {
     return res.status(503).json({ error: 'AUTH_SERVICE_UNAVAILABLE' });
   }
 }
+function verifyPassword(password, storedHash) {
+  const [algorithm, salt, expected] = String(storedHash || '').split('$');
+  if (algorithm !== 'scrypt' || !salt || !expected) return false;
+  const actual = crypto.scryptSync(password, salt, 64).toString('hex');
+  return actual.length === expected.length && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+function safeUser(row) {
+  return { id: row.id, username: row.username, fullName: row.fullName, email: row.email, personnelCode: row.personnelCode, department: row.department, role: row.role, isActive: Boolean(row.isActive) };
+}
 function requireRole(...roles) {
   return (req, res, next) => roles.includes(req.session.user?.role) ? next() : res.status(403).json({ error: 'FORBIDDEN' });
 }
@@ -84,6 +94,18 @@ app.get('/api/health', async (_req, res) => {
   catch { res.status(503).json({ ok: false, database: 'unavailable' }); }
 });
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: req.session.user }));
+app.post('/api/auth/local', async (req, res) => {
+  if (ssoEnabled) return res.status(403).json({ error: 'LOCAL_LOGIN_DISABLED' });
+  const username = normaliseUsername(req.body?.username);
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!username || password.length < 8) return res.status(400).json({ error: 'INVALID_CREDENTIALS' });
+  const [rows] = await pool.execute('SELECT id, username, full_name AS fullName, email, personnel_code AS personnelCode, department, role, is_active AS isActive, password_hash AS passwordHash FROM users WHERE LOWER(username) = ? LIMIT 1', [username]);
+  const row = rows[0];
+  if (!row || !row.isActive || !verifyPassword(password, row.passwordHash)) return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
+  req.session.user = safeUser(row);
+  await audit(req, 'auth.local.login', 'session');
+  res.json({ user: req.session.user });
+});
 app.post('/api/auth/logout', (req, res) => req.session.destroy(() => res.status(204).end()));
 app.get('/api/settings/ui', requireAuth, async (_req, res) => {
   const [rows] = await pool.execute('SELECT setting_value AS value FROM app_settings WHERE setting_key = ? LIMIT 1', ['ui']);
