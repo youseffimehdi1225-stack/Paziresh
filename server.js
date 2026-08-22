@@ -35,7 +35,13 @@ app.set('trust proxy', trustProxy);
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '100kb' }));
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false }));
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip || req.socket?.remoteAddress || 'iisnode-client',
+}));
 app.use(session({
   name: 'paziresh.sid', secret: sessionSecret || crypto.randomBytes(32).toString('hex'), store: sessionStore,
   resave: false, saveUninitialized: false,
